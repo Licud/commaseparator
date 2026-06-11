@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Expense Tracker</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        :root {
+            --bg:             #1a1a1a;
+            --surface:        #242424;
+            --surface-hover:  #2c2c2c;
+            --border:         #383838;
+            --text:           #e0e0e0;
+            --text-muted:     #777;
+            --accent:         #4d8ef0;
+            --accent-hover:   #3a7ce0;
+            --green:          #4caf7d;
+            --red:            #e05252;
+        }
+
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            font-size: 14px;
+            padding: 32px;
+        }
+
+        h1 {
+            font-size: 20px;
+            font-weight: 600;
+            margin-bottom: 24px;
+        }
+
+        /* ── Form ── */
+        .add-form {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            align-items: flex-end;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 20px;
+        }
+
+        .field {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .field label {
+            font-size: 12px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .field input,
+        .field select {
+            background: var(--bg);
+            border: 1px solid var(--border);
+            color: var(--text);
+            border-radius: 5px;
+            padding: 7px 10px;
+            font-size: 14px;
+            outline: none;
+            transition: border-color 0.15s;
+        }
+
+        .field input:focus,
+        .field select:focus {
+            border-color: var(--accent);
+        }
+
+        .field select option {
+            background: var(--bg);
+        }
+
+        /* Credit checkbox sits differently — label wraps the input */
+        .field-credit {
+            justify-content: flex-end;
+            padding-bottom: 8px;
+        }
+
+        .field-credit label {
+            font-size: 14px;
+            color: var(--text);
+            text-transform: none;
+            letter-spacing: normal;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+        }
+
+        .field-credit input[type="checkbox"] {
+            width: 16px;
+            height: 16px;
+            accent-color: var(--accent);
+            cursor: pointer;
+        }
+
+        /* £ symbol overlay inside amount input */
+        .field-amount {
+            position: relative;
+        }
+
+        .field-amount .pound-sign {
+            position: absolute;
+            bottom: 8px;
+            left: 10px;
+            color: var(--text-muted);
+            pointer-events: none;
+        }
+
+        .field-amount input {
+            padding-left: 22px;
+            width: 110px;
+        }
+
+        .field-notes input { width: 200px; }
+        .field-date input  { width: 150px; }
+
+        .btn-add {
+            background: var(--accent);
+            color: #fff;
+            border: none;
+            border-radius: 5px;
+            padding: 8px 18px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            align-self: flex-end;
+            transition: background 0.15s;
+        }
+
+        .btn-add:hover { background: var(--accent-hover); }
+
+        /* ── Toolbar ── */
+        .toolbar {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 16px;
+        }
+
+        .btn {
+            background: var(--surface);
+            color: var(--text);
+            border: 1px solid var(--border);
+            border-radius: 5px;
+            padding: 7px 14px;
+            font-size: 13px;
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+
+        .btn:hover { background: var(--surface-hover); }
+
+        .btn-clear:hover { color: var(--red); border-color: var(--red); }
+
+        .copy-confirm {
+            font-size: 13px;
+            color: var(--green);
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+
+        .copy-confirm.visible { opacity: 1; }
+
+        /* ── Table ── */
+        .table-wrapper {
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        thead { background: var(--surface); }
+
+        th {
+            text-align: left;
+            padding: 10px 14px;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-muted);
+            border-bottom: 1px solid var(--border);
+        }
+
+        td {
+            padding: 10px 14px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        tbody tr:last-child td { border-bottom: none; }
+        tbody tr:hover        { background: var(--surface); }
+
+        .credit-yes  { color: var(--green); font-weight: 500; }
+        .credit-no   { color: var(--text-muted); }
+
+        /* Tabular nums keep £ amounts from jiggling when sorted */
+        .col-amount { font-variant-numeric: tabular-nums; }
+
+        .btn-delete {
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 16px;
+            line-height: 1;
+            transition: color 0.15s;
+        }
+
+        .btn-delete:hover { color: var(--red); }
+
+        .empty-row td {
+            text-align: center;
+            padding: 40px;
+            color: var(--text-muted);
+        }
+    </style>
+</head>
+<body>
+
+<h1>Expense Tracker</h1>
+
+<div class="add-form">
+    <div class="field field-credit">
+        <label>
+            <input type="checkbox" id="input-credit">
+            Credit
+        </label>
+    </div>
+
+    <div class="field">
+        <label>Category</label>
+        <select id="input-category">
+            <option>Eating Out</option>
+            <option>Grocery</option>
+            <option>Travel</option>
+            <option>Gaming</option>
+            <option>Bills</option>
+            <option>Shopping</option>
+            <option>Car</option>
+        </select>
+    </div>
+
+    <div class="field field-amount">
+        <label>Amount</label>
+        <span class="pound-sign">£</span>
+        <input type="number" id="input-amount" min="0" step="0.01" placeholder="0.00">
+    </div>
+
+    <div class="field field-date">
+        <label>Date</label>
+        <input type="date" id="input-date">
+    </div>
+
+    <div class="field field-notes">
+        <label>Notes</label>
+        <input type="text" id="input-notes" placeholder="Optional">
+    </div>
+
+    <button class="btn-add" onclick="addEntry()">Add</button>
+</div>
+
+<div class="toolbar">
+    <button class="btn" onclick="sortByDate()">Sort by Date</button>
+    <button class="btn" onclick="copyAsCSV()">Copy as CSV</button>
+    <button class="btn btn-clear" onclick="clearAll()">Clear All</button>
+    <span class="copy-confirm" id="copy-confirm">Copied!</span>
+</div>
+
+<div class="table-wrapper">
+    <table>
+        <thead>
+            <tr>
+                <th>Credit</th>
+                <th>Expense Category</th>
+                <th>Amount</th>
+                <th>Date</th>
+                <th>Notes</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody id="entries-tbody"></tbody>
+    </table>
+</div>
+
+<script>
+    let entries = loadFromStorage();
+
+    const tbody = document.getElementById('entries-tbody');
+
+    // Default date to today
+    document.getElementById('input-date').valueAsDate = new Date();
+
+    renderTable();
+
+    function addEntry() {
+        const credit    = document.getElementById('input-credit').checked;
+        const category  = document.getElementById('input-category').value;
+        const amountRaw = document.getElementById('input-amount').value;
+        const date      = document.getElementById('input-date').value;
+        const notes     = document.getElementById('input-notes').value.trim();
+
+        if (!amountRaw || !date) {
+            alert('Amount and date are required.');
+            return;
+        }
+
+        entries.push({
+            credit,
+            category,
+            amount: parseFloat(amountRaw).toFixed(2),
+            date,
+            notes
+        });
+
+        saveToStorage();
+        renderTable();
+        clearForm();
+    }
+
+    function clearAll() {
+        if (!confirm('Clear all entries?')) return;
+        entries = [];
+        saveToStorage();
+        renderTable();
+    }
+
+    function deleteEntry(index) {
+        entries.splice(index, 1);
+        saveToStorage();
+        renderTable();
+    }
+
+    function sortByDate() {
+        entries.sort((a, b) => new Date(a.date) - new Date(b.date));
+        saveToStorage();
+        renderTable();
+    }
+
+    function copyAsCSV() {
+        if (entries.length === 0) return;
+
+        // Tab-separated so it pastes cleanly into Excel columns
+        const tsv = entries
+            .map(e => [
+                e.credit ? 'Yes' : 'No',
+                e.category,
+                e.amount,
+                formatDate(e.date),
+                e.notes
+            ].join('\t'))
+            .join('\n');
+
+        const csv = tsv;
+
+        navigator.clipboard.writeText(csv).then(() => {
+            const notice = document.getElementById('copy-confirm');
+            notice.classList.add('visible');
+            setTimeout(() => notice.classList.remove('visible'), 2000);
+        });
+    }
+
+    function renderTable() {
+        if (entries.length === 0) {
+            tbody.innerHTML = '<tr class="empty-row"><td colspan="6">No entries yet</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = entries.map((entry, index) => `
+            <tr>
+                <td class="${entry.credit ? 'credit-yes' : 'credit-no'}">${entry.credit ? 'Yes' : 'No'}</td>
+                <td>${entry.category}</td>
+                <td class="col-amount">£${entry.amount}</td>
+                <td>${formatDate(entry.date)}</td>
+                <td>${entry.notes}</td>
+                <td><button class="btn-delete" onclick="deleteEntry(${index})" title="Remove">×</button></td>
+            </tr>
+        `).join('');
+    }
+
+    function clearForm() {
+        document.getElementById('input-credit').checked = false;
+        document.getElementById('input-amount').value   = '';
+        document.getElementById('input-notes').value    = '';
+        // category and date stay as-is for quick repeat entries
+    }
+
+    function formatDate(isoDate) {
+        const [year, month, day] = isoDate.split('-');
+        return `${day}/${month}/${year}`;
+    }
+
+    function saveToStorage() {
+        localStorage.setItem('expense-entries', JSON.stringify(entries));
+    }
+
+    function loadFromStorage() {
+        const saved = localStorage.getItem('expense-entries');
+        return saved ? JSON.parse(saved) : [];
+    }
+</script>
+
+</body>
+</html>

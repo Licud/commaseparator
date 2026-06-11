@@ -6,6 +6,8 @@
     <title>Expense Tracker</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Lora:wght@400;500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-matrix"></script>
     <style>
         * {
             box-sizing: border-box;
@@ -497,6 +499,87 @@
         }
 
         .spreadsheet-input-wrap input:focus { border-color: var(--accent); }
+
+        /* ── Charts tab ── */
+        .paste-area {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 16px;
+            margin-bottom: 24px;
+        }
+
+        .paste-area label {
+            display: block;
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.07em;
+            margin-bottom: 8px;
+        }
+
+        .paste-area textarea {
+            width: 100%;
+            height: 80px;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            color: var(--text);
+            border-radius: 6px;
+            padding: 10px;
+            font-family: 'Inter', sans-serif;
+            font-size: 12px;
+            resize: vertical;
+            outline: none;
+            transition: border-color 0.15s;
+        }
+
+        .paste-area textarea:focus { border-color: var(--accent); }
+
+        .paste-actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 10px;
+        }
+
+        .charts-empty {
+            text-align: center;
+            padding: 60px 20px;
+            color: var(--text-muted);
+            font-size: 13px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+        }
+
+        .chart-panel {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 20px 24px;
+            margin-bottom: 20px;
+        }
+
+        .chart-panel h2 {
+            font-family: 'Lora', Georgia, serif;
+            font-size: 15px;
+            font-weight: 400;
+            color: var(--text);
+            margin-bottom: 20px;
+        }
+
+        .charts-row-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        .paste-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+            margin-bottom: 12px;
+        }
     </style>
 </head>
 <body>
@@ -505,6 +588,7 @@
     <h1>Expense Tracker</h1>
     <button class="tab-btn active" onclick="switchTab('expenses')">Expenses</button>
     <button class="tab-btn" onclick="switchTab('balance')">Balance</button>
+    <button class="tab-btn" onclick="switchTab('charts')">Charts</button>
 </div>
 
 <!-- ── Expenses tab ── -->
@@ -646,6 +730,29 @@
             <span class="value" id="summary-diff">—</span>
         </div>
     </div>
+
+</div>
+
+<!-- ── Charts tab ── -->
+<div class="page" id="page-charts">
+
+    <div class="paste-grid">
+        <div class="paste-area">
+            <label>Categories table</label>
+            <textarea id="chart-paste" placeholder="Paste the categories table (Month, Eating Out, Grocery…)" oninput="onChartPaste()"></textarea>
+        </div>
+        <div class="paste-area">
+            <label>Account data table</label>
+            <textarea id="account-paste" placeholder="Paste the account table (Month, Account Total, Current Debt)" oninput="onAccountPaste()"></textarea>
+        </div>
+    </div>
+    <div style="margin-bottom: 20px;">
+        <button class="btn" onclick="clearChartData()">Clear all</button>
+    </div>
+
+    <div id="charts-content"></div>
+    <div id="account-charts-content"></div>
+    <div id="crossref-content"></div>
 
 </div>
 
@@ -873,6 +980,436 @@
         const diff = available - ssValue;
         diffEl.textContent = (diff >= 0 ? '+' : '−') + fmt(Math.abs(diff));
         diffEl.className   = 'value ' + (Math.abs(diff) < 0.01 ? 'positive' : 'negative');
+    }
+
+    // ── Charts ──
+    let stackedChart   = null;
+    let lineChart      = null;
+    let donutChart     = null;
+    let groupedChart   = null;
+    let heatmapChart   = null;
+    let debtChart      = null;
+    let crossRefChart  = null;
+
+    let categoryData = null;
+    let accountData  = null;
+
+    const CATEGORY_COLORS = [
+        '#d4785a', '#7dc4a2', '#7aadcc', '#b49bd4',
+        '#d4b878', '#d47890', '#8abd7a', '#9a9a9a'
+    ];
+
+    Chart.defaults.color       = '#7a6f68';
+    Chart.defaults.borderColor = '#2e2a26';
+
+    // Restore saved pastes on load
+    const savedPaste = localStorage.getItem('chart-paste');
+    if (savedPaste) {
+        document.getElementById('chart-paste').value = savedPaste;
+        categoryData = parseExcelData(savedPaste);
+    }
+    const savedAccountPaste = localStorage.getItem('account-paste');
+    if (savedAccountPaste) {
+        document.getElementById('account-paste').value = savedAccountPaste;
+        accountData = parseAccountData(savedAccountPaste);
+    }
+    if (categoryData || accountData) setTimeout(redrawAllCharts, 100);
+
+    function onChartPaste() {
+        const text = document.getElementById('chart-paste').value;
+        localStorage.setItem('chart-paste', text);
+        categoryData = parseExcelData(text);
+        redrawAllCharts();
+    }
+
+    function onAccountPaste() {
+        const text = document.getElementById('account-paste').value;
+        localStorage.setItem('account-paste', text);
+        accountData = parseAccountData(text);
+        redrawAllCharts();
+    }
+
+    function clearChartData() {
+        document.getElementById('chart-paste').value   = '';
+        document.getElementById('account-paste').value = '';
+        localStorage.removeItem('chart-paste');
+        localStorage.removeItem('account-paste');
+        categoryData = null;
+        accountData  = null;
+        ['charts-content', 'account-charts-content', 'crossref-content'].forEach(id => {
+            document.getElementById(id).innerHTML = '';
+        });
+        [stackedChart, lineChart, donutChart, debtChart, crossRefChart].forEach(c => {
+            if (c) c.destroy();
+        });
+        stackedChart = lineChart = donutChart = debtChart = crossRefChart = null;
+    }
+
+    function redrawAllCharts() {
+        if (categoryData) drawCategoryCharts(categoryData);
+        if (accountData)  drawAccountCharts(accountData);
+        if (categoryData && accountData) drawCrossRefCharts(categoryData, accountData);
+        else document.getElementById('crossref-content').innerHTML = '';
+    }
+
+    function parseExcelData(text) {
+        const lines = text.trim().split('\n').filter(l => l.trim());
+        if (lines.length < 2) return null;
+
+        const headers    = lines[0].split('\t').map(h => h.trim());
+        const categories = headers.slice(1);
+
+        const rows = lines.slice(1).map(line => {
+            const cells  = line.split('\t').map(c => c.trim());
+            const month  = cells[0];
+            const values = cells.slice(1).map(v => parseFloat(v.replace(/[£,]/g, '')) || 0);
+            return { month, values };
+        }).filter(row => row.values.some(v => v > 0));
+
+        if (rows.length === 0) return null;
+        return { categories, rows };
+    }
+
+    function parseAccountData(text) {
+        const lines = text.trim().split('\n').filter(l => l.trim());
+        if (lines.length < 2) return null;
+
+        const rows = lines.slice(1).map(line => {
+            const cells = line.split('\t').map(c => c.trim());
+            return {
+                month:   cells[0],
+                total:   parseFloat((cells[1] || '').replace(/[£,]/g, '')) || 0,
+                debt:    parseFloat((cells[2] || '').replace(/[£,]/g, '')) || 0
+            };
+        });
+
+        return rows;
+    }
+
+    function drawCategoryCharts(data) {
+        const { categories, rows } = data;
+        const months = rows.map(r => r.month);
+
+        if (stackedChart) stackedChart.destroy();
+        if (lineChart)    lineChart.destroy();
+        if (donutChart)   donutChart.destroy();
+        if (groupedChart) groupedChart.destroy();
+        if (heatmapChart) heatmapChart.destroy();
+
+        document.getElementById('charts-content').innerHTML = `
+            <div class="chart-panel">
+                <h2>Monthly breakdown</h2>
+                <canvas id="chart-stacked"></canvas>
+            </div>
+            <div class="chart-panel" style="margin-top:20px;">
+                <h2>Category comparison</h2>
+                <canvas id="chart-grouped"></canvas>
+            </div>
+            <div class="chart-panel" style="margin-top:20px;">
+                <h2>Spending heatmap</h2>
+                <canvas id="chart-heatmap"></canvas>
+            </div>
+            <div class="charts-row-2" style="margin-top:20px;">
+                <div class="chart-panel">
+                    <h2>Trends by category</h2>
+                    <canvas id="chart-line"></canvas>
+                </div>
+                <div class="chart-panel">
+                    <h2>Year totals</h2>
+                    <canvas id="chart-donut"></canvas>
+                </div>
+            </div>`;
+
+        const sharedLegend = { position: 'bottom', labels: { boxWidth: 12, padding: 16 } };
+        const sharedScaleY = { ticks: { callback: v => '£' + v } };
+
+        const stackedDatasets = categories.map((cat, i) => ({
+            label:           cat,
+            data:            rows.map(r => r.values[i]),
+            backgroundColor: CATEGORY_COLORS[i % CATEGORY_COLORS.length] + 'bb',
+            borderColor:     CATEGORY_COLORS[i % CATEGORY_COLORS.length],
+            borderWidth:     1
+        }));
+
+        stackedChart = new Chart(document.getElementById('chart-stacked'), {
+            type: 'bar',
+            data: { labels: months, datasets: stackedDatasets },
+            options: {
+                responsive: true,
+                plugins: { legend: sharedLegend },
+                scales: { x: { stacked: true }, y: { stacked: true, ...sharedScaleY } }
+            }
+        });
+
+        groupedChart = new Chart(document.getElementById('chart-grouped'), {
+            type: 'bar',
+            data: {
+                labels: months,
+                datasets: categories.map((cat, i) => ({
+                    label:           cat,
+                    data:            rows.map(r => r.values[i]),
+                    backgroundColor: CATEGORY_COLORS[i % CATEGORY_COLORS.length] + 'bb',
+                    borderColor:     CATEGORY_COLORS[i % CATEGORY_COLORS.length],
+                    borderWidth:     1
+                }))
+            },
+            options: {
+                responsive: true,
+                plugins: { legend: sharedLegend },
+                scales:  { y: sharedScaleY }
+            }
+        });
+
+        const heatmapData = [];
+        categories.forEach((cat, ci) => {
+            rows.forEach(row => {
+                heatmapData.push({ x: row.month, y: cat, v: row.values[ci] });
+            });
+        });
+        const maxVal = Math.max(...heatmapData.map(d => d.v));
+
+        heatmapChart = new Chart(document.getElementById('chart-heatmap'), {
+            type: 'matrix',
+            data: {
+                datasets: [{
+                    label: 'Spending',
+                    data:  heatmapData,
+                    backgroundColor: ctx => {
+                        const v = ctx.dataset.data[ctx.dataIndex].v;
+                        const alpha = maxVal > 0 ? 0.08 + (v / maxVal) * 0.92 : 0;
+                        return `rgba(212, 120, 90, ${alpha.toFixed(2)})`;
+                    },
+                    borderColor:  'rgba(46,42,38,0.6)',
+                    borderWidth:  1,
+                    width:  ctx => { const a = ctx.chart.chartArea; return a ? (a.width  / months.length)     - 2 : 30; },
+                    height: ctx => { const a = ctx.chart.chartArea; return a ? (a.height / categories.length) - 2 : 20; }
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            title: ctx => `${ctx[0].raw.y} — ${ctx[0].raw.x}`,
+                            label: ctx => `£${ctx.raw.v.toFixed(2)}`
+                        }
+                    }
+                },
+                scales: {
+                    x: { type: 'category', labels: months,                          offset: true, grid: { display: false } },
+                    y: { type: 'category', labels: [...categories].reverse(),        offset: true, grid: { display: false } }
+                }
+            }
+        });
+
+        lineChart = new Chart(document.getElementById('chart-line'), {
+            type: 'line',
+            data: {
+                labels: months,
+                datasets: categories.map((cat, i) => ({
+                    label:           cat,
+                    data:            rows.map(r => r.values[i]),
+                    borderColor:     CATEGORY_COLORS[i % CATEGORY_COLORS.length],
+                    backgroundColor: 'transparent',
+                    borderWidth:     2,
+                    pointRadius:     3,
+                    tension:         0.3
+                }))
+            },
+            options: { responsive: true, plugins: { legend: sharedLegend }, scales: { y: sharedScaleY } }
+        });
+
+        const donutTotals = categories.map((_, i) =>
+            rows.reduce((sum, r) => sum + r.values[i], 0)
+        );
+
+        donutChart = new Chart(document.getElementById('chart-donut'), {
+            type: 'doughnut',
+            data: {
+                labels: categories,
+                datasets: [{
+                    data:            donutTotals,
+                    backgroundColor: CATEGORY_COLORS.map(c => c + 'bb'),
+                    borderColor:     CATEGORY_COLORS,
+                    borderWidth:     1
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    legend: { ...sharedLegend, position: 'right' },
+                    tooltip: { callbacks: { label: ctx => ctx.label + ': £' + ctx.raw.toFixed(2) } }
+                }
+            }
+        });
+    }
+
+    function drawAccountCharts(rows) {
+        if (debtChart) debtChart.destroy();
+
+        const activeRows = rows.filter(r => r.total > 0);
+        const months     = activeRows.map(r => r.month);
+
+        document.getElementById('account-charts-content').innerHTML = `
+            <div class="charts-row-2" style="margin-top: 20px;">
+                <div class="chart-panel">
+                    <h2>Account total</h2>
+                    <canvas id="chart-account-total"></canvas>
+                </div>
+                <div class="chart-panel">
+                    <h2>Current debt</h2>
+                    <canvas id="chart-debt"></canvas>
+                </div>
+            </div>`;
+
+        new Chart(document.getElementById('chart-account-total'), {
+            type: 'line',
+            data: {
+                labels: months,
+                datasets: [{
+                    label:           'Account Total',
+                    data:            activeRows.map(r => r.total),
+                    borderColor:     '#7dc4a2',
+                    backgroundColor: 'rgba(125,196,162,0.08)',
+                    borderWidth:     2,
+                    pointRadius:     4,
+                    fill:            true,
+                    tension:         0.3
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: { legend: { display: false } },
+                scales: { y: { ticks: { callback: v => '£' + v } } }
+            }
+        });
+
+        debtChart = new Chart(document.getElementById('chart-debt'), {
+            type: 'bar',
+            data: {
+                labels: months,
+                datasets: [{
+                    label:           'Current Debt',
+                    data:            activeRows.map(r => r.debt),
+                    backgroundColor: '#c96b6888',
+                    borderColor:     '#c96b68',
+                    borderWidth:     1
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: { legend: { display: false } },
+                scales: { y: { ticks: { callback: v => '£' + v } } }
+            }
+        });
+    }
+
+    function drawCrossRefCharts(catData, accRows) {
+        if (crossRefChart) crossRefChart.destroy();
+
+        const accMonths    = accRows.filter(r => r.total > 0).map(r => r.month);
+        const commonMonths = catData.rows.map(r => r.month).filter(m => accMonths.includes(m));
+        if (commonMonths.length === 0) return;
+
+        const catRows     = catData.rows.filter(r => commonMonths.includes(r.month));
+        const accFiltered = accRows.filter(r => commonMonths.includes(r.month));
+
+        const totalSpend    = catRows.map(r => r.values.reduce((s, v) => s + v, 0));
+        const accountTotals = accFiltered.map(r => r.total);
+
+        // Month-over-month account change (skip first month — no prior to compare)
+        const changeMonths  = commonMonths.slice(1);
+        const accountChange = accountTotals.slice(1).map((t, i) => t - accountTotals[i]);
+        const spendForChange = totalSpend.slice(1);
+
+        document.getElementById('crossref-content').innerHTML = `
+            <div class="charts-row-2" style="margin-top: 20px;">
+                <div class="chart-panel">
+                    <h2>Account total</h2>
+                    <canvas id="chart-acc-line"></canvas>
+                </div>
+                <div class="chart-panel">
+                    <h2>Total spending per month</h2>
+                    <canvas id="chart-spend-bars"></canvas>
+                </div>
+            </div>
+            <div class="chart-panel" style="margin-top: 20px;">
+                <h2>Account change vs spending</h2>
+                <canvas id="chart-net"></canvas>
+            </div>`;
+
+        new Chart(document.getElementById('chart-acc-line'), {
+            type: 'line',
+            data: {
+                labels: commonMonths,
+                datasets: [{
+                    data:            accountTotals,
+                    borderColor:     '#7dc4a2',
+                    backgroundColor: 'rgba(125,196,162,0.08)',
+                    borderWidth:     2,
+                    pointRadius:     4,
+                    fill:            true,
+                    tension:         0.3
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: { legend: { display: false } },
+                scales:  { y: { ticks: { callback: v => '£' + v.toLocaleString() } } }
+            }
+        });
+
+        new Chart(document.getElementById('chart-spend-bars'), {
+            type: 'bar',
+            data: {
+                labels: commonMonths,
+                datasets: [{
+                    data:            totalSpend,
+                    backgroundColor: '#d4785abb',
+                    borderColor:     '#d4785a',
+                    borderWidth:     1
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: { legend: { display: false } },
+                scales:  { y: { ticks: { callback: v => '£' + v } } }
+            }
+        });
+
+        // Net chart — account change (green/red depending on direction) vs spend
+        crossRefChart = new Chart(document.getElementById('chart-net'), {
+            type: 'line',
+            data: {
+                labels: changeMonths,
+                datasets: [
+                    {
+                        label:           'Account change',
+                        data:            accountChange,
+                        borderColor:     '#7dc4a2',
+                        backgroundColor: 'transparent',
+                        borderWidth:     2,
+                        pointRadius:     4,
+                        tension:         0.3
+                    },
+                    {
+                        label:           'Total spending',
+                        data:            spendForChange,
+                        borderColor:     '#d4785a',
+                        backgroundColor: 'transparent',
+                        borderWidth:     2,
+                        pointRadius:     4,
+                        tension:         0.3
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, padding: 16 } } },
+                scales:  { y: { ticks: { callback: v => '£' + v } } }
+            }
+        });
     }
 
     // ── Helpers ──
